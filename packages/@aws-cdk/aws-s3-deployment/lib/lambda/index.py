@@ -44,19 +44,20 @@ def handler(event, context):
         physical_id = event.get('PhysicalResourceId', None)
 
         try:
-            source_bucket_names = props['SourceBucketNames']
-            source_object_keys  = props['SourceObjectKeys']
-            source_markers      = props.get('SourceMarkers', None)
-            dest_bucket_name    = props['DestinationBucketName']
-            dest_bucket_prefix  = props.get('DestinationBucketKeyPrefix', '')
-            extract             = props.get('Extract', 'true') == 'true'
-            retain_on_delete    = props.get('RetainOnDelete', "true") == "true"
-            distribution_id     = props.get('DistributionId', '')
-            user_metadata       = props.get('UserMetadata', {})
-            system_metadata     = props.get('SystemMetadata', {})
-            prune               = props.get('Prune', 'true').lower() == 'true'
-            exclude             = props.get('Exclude', [])
-            include             = props.get('Include', [])
+            source_bucket_names       = props['SourceBucketNames']
+            source_object_keys        = props['SourceObjectKeys']
+            source_markers            = props.get('SourceMarkers', None)
+            dest_bucket_name          = props['DestinationBucketName']
+            dest_bucket_prefix        = props.get('DestinationBucketKeyPrefix', '')
+            extract                   = props.get('Extract', 'true') == 'true'
+            retain_on_delete          = props.get('RetainOnDelete', "true") == "true"
+            distribution_id           = props.get('DistributionId', '')
+            distribution_wait_timeout = props.get('DistributionWaitTimeout', 10)
+            user_metadata             = props.get('UserMetadata', {})
+            system_metadata           = props.get('SystemMetadata', {})
+            prune                     = props.get('Prune', 'true').lower() == 'true'
+            exclude                   = props.get('Exclude', [])
+            include                   = props.get('Include', [])
 
             # backwards compatibility - if "SourceMarkers" is not specified,
             # assume all sources have an empty market map
@@ -71,6 +72,7 @@ def handler(event, context):
             default_distribution_path += "*"
 
             distribution_paths = props.get('DistributionPaths', [default_distribution_path])
+            distribution_wait_timeout = props.get('DistributionWaitTimeout')
         except KeyError as e:
             cfn_error("missing request resource property %s. props: %s" % (str(e), props))
             return
@@ -117,7 +119,7 @@ def handler(event, context):
             s3_deploy(s3_source_zips, s3_dest, user_metadata, system_metadata, prune, exclude, include, source_markers, extract)
 
         if distribution_id:
-            cloudfront_invalidate(distribution_id, distribution_paths)
+            cloudfront_invalidate(distribution_id, distribution_paths, distribution_wait_timeout)
 
         cfn_send(event, context, CFN_SUCCESS, physicalResourceId=physical_id, responseData={
             # Passing through the ARN sequences dependencees on the deployment
@@ -191,7 +193,7 @@ def s3_deploy(s3_source_zips, s3_dest, user_metadata, system_metadata, prune, ex
 
 #---------------------------------------------------------------------------------------------------
 # invalidate files in the CloudFront distribution edge caches
-def cloudfront_invalidate(distribution_id, distribution_paths):
+def cloudfront_invalidate(distribution_id, distribution_paths, distribution_wait_timeout):
     invalidation_resp = cloudfront.create_invalidation(
         DistributionId=distribution_id,
         InvalidationBatch={
@@ -204,7 +206,11 @@ def cloudfront_invalidate(distribution_id, distribution_paths):
     # by default, will wait up to 10 minutes
     cloudfront.get_waiter('invalidation_completed').wait(
         DistributionId=distribution_id,
-        Id=invalidation_resp['Invalidation']['Id'])
+        Id=invalidation_resp['Invalidation']['Id']
+        WaiterConfig={
+            'Delay': 20,
+            'MaxAttempts': 3 * distribution_wait_timeout
+        })
 
 #---------------------------------------------------------------------------------------------------
 # set metadata

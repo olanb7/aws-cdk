@@ -106,6 +106,12 @@ export interface BucketDeploymentProps {
    */
   readonly distributionPaths?: string[];
 
+   /**
+   * The timeout in seconds that cloudfront will wait for invalidation to complete.
+   *
+   * @default 10 seconds
+   */
+  readonly distributionWaitTimeout?: number;
 
   /**
    * The number of days that the lambda function's log events are kept in CloudWatch Logs.
@@ -260,6 +266,12 @@ export class BucketDeployment extends Construct {
   constructor(scope: Construct, id: string, props: BucketDeploymentProps) {
     super(scope, id);
 
+    if (props.distributionWaitTimeout) {
+      if (!props.distribution) {
+        throw new Error('Distribution must be specified if distribution timeout is specified');
+      }
+    }
+
     if (props.distributionPaths) {
       if (!props.distribution) {
         throw new Error('Distribution must be specified if distribution paths are specified');
@@ -392,6 +404,7 @@ export class BucketDeployment extends Construct {
         SystemMetadata: mapSystemMetadata(props),
         DistributionId: props.distribution?.distributionId,
         DistributionPaths: props.distributionPaths,
+        DistributionWaitTimeout: props.distributionWaitTimeout,
         // Passing through the ARN sequences dependency on the deployment
         DestinationBucketArn: cdk.Lazy.string({ produce: () => this.requestDestinationArn ? this.destinationBucket.bucketArn : undefined }),
       },

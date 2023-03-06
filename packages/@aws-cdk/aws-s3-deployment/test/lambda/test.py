@@ -446,6 +446,30 @@ class TestHandler(unittest.TestCase):
                 "DestinationBucketName": "<dest-bucket-name>",
             }, physical_id="<physical-id>")
 
+    def test_update_same_dest_cf_invalidate_custom_wait_timeout(self):        
+        def mock_make_api_call(self, operation_name, kwarg):
+            if operation_name == 'CreateInvalidation':
+                assert kwarg['DistributionId'] == '<cf-dist-id>'
+                assert kwarg['InvalidationBatch']['Paths']['Quantity'] == 1
+                assert kwarg['InvalidationBatch']['Paths']['Items'][0] == '/*'
+                return {'Invalidation': {'Id': '<invalidation-id>'}}
+            if operation_name == 'GetInvalidation' and kwarg['Id'] == '<invalidation-id>':
+                return {'Invalidation': {'Id': '<invalidation-id>', 'Status': 'Completed'}}
+            ## TODO: how do i verify args passed to wait?
+            raise ClientError({'Error': {'Code': '500', 'Message': 'Unsupported operation'}}, operation_name)
+
+        with patch('botocore.client.BaseClient._make_api_call', new=mock_make_api_call):
+            invoke_handler("Update", {
+                "SourceBucketNames": ["<source-bucket>"],
+                "SourceObjectKeys": ["<source-object-key>"],
+                "DestinationBucketName": "<dest-bucket-name>",
+                "DistributionId": "<cf-dist-id>",
+                "DistributionPaths": ["/*"],
+                "DistributionWaitTimeout": 30
+            }, old_resource_props={
+                "DestinationBucketName": "<dest-bucket-name>",
+            }, physical_id="<physical-id>")
+
     def test_update_new_dest_retain(self):
         invoke_handler("Update", {
             "SourceBucketNames": ["<source-bucket>"],
